@@ -39,9 +39,15 @@ NUM_STARS = 50
 STAR_SIZE = 2
 STAR_COLOR = WHITE
 
+# Strategy properties
+NUM_SYSTEMS = 5
+SYSTEM_RADIUS = 10
+STRATEGY_SPEED = 2
+
 # Game states
-GAME_RUNNING = 0
-GAME_OVER = 1
+GAME_STRATEGY = 0
+GAME_BATTLE = 1
+GAME_OVER = 2
 
 
 # --- Classes ---
@@ -154,18 +160,6 @@ class Missile(Bullet):
 
 # --- Game Setup ---
 
-# Player ship
-player = Ship(SCREEN_WIDTH // 4, SCREEN_HEIGHT // 2, GREEN)
-player_group = pygame.sprite.Group(player)
-
-# Computer ship
-computer = Ship(SCREEN_WIDTH * 3 // 4, SCREEN_HEIGHT // 2, RED)
-computer_group = pygame.sprite.Group(computer)
-
-# Bullet groups
-player_bullets = pygame.sprite.Group()
-computer_bullets = pygame.sprite.Group()
-
 # Starfield (background)
 stars = []
 for _ in range(NUM_STARS):
@@ -173,16 +167,38 @@ for _ in range(NUM_STARS):
     y = random.randint(0, SCREEN_HEIGHT)
     stars.append((x, y))
 
+# Placeholders for battle entities
+player = None
+computer = None
+player_group = pygame.sprite.Group()
+computer_group = pygame.sprite.Group()
+player_bullets = pygame.sprite.Group()
+computer_bullets = pygame.sprite.Group()
 
-def new_game():
+
+def start_strategy():
+    """Initialize the strategic starfield mode."""
+    global game_state, systems, strategy_player_pos
+    systems = []
+    for i in range(NUM_SYSTEMS):
+        x = random.randint(50, SCREEN_WIDTH - 50)
+        y = random.randint(50, SCREEN_HEIGHT - 50)
+        has_enemy = i == 0  # ensure at least one enemy system
+        systems.append({"x": x, "y": y, "enemy": has_enemy})
+    strategy_player_pos = [SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2]
+    game_state = GAME_STRATEGY
+
+
+def start_battle():
+    """Setup a new battle between player and computer."""
     global player, computer, player_group, computer_group, player_bullets, computer_bullets, game_state
     player = Ship(SCREEN_WIDTH // 4, SCREEN_HEIGHT // 2, GREEN)
     computer = Ship(SCREEN_WIDTH * 3 // 4, SCREEN_HEIGHT // 2, RED)
     player_group = pygame.sprite.Group(player)
     computer_group = pygame.sprite.Group(computer)
-    player_bullets.empty()
-    computer_bullets.empty()
-    game_state = GAME_RUNNING
+    player_bullets = pygame.sprite.Group()
+    computer_bullets = pygame.sprite.Group()
+    game_state = GAME_BATTLE
 
 
 # --- Game Logic Functions ---
@@ -222,8 +238,8 @@ def computer_ai(computer, player, player_bullets):
 # --- Game Loop ---
 
 running = True
-game_state = GAME_RUNNING
 clock = pygame.time.Clock()
+start_strategy()
 
 while running:
     # --- Event Handling ---
@@ -232,10 +248,31 @@ while running:
             running = False
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_n and game_state == GAME_OVER:
-                new_game()
+                start_strategy()
 
     # --- Game Logic ---
-    if game_state == GAME_RUNNING:
+    if game_state == GAME_STRATEGY:
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_UP]:
+            strategy_player_pos[1] -= STRATEGY_SPEED
+        if keys[pygame.K_DOWN]:
+            strategy_player_pos[1] += STRATEGY_SPEED
+        if keys[pygame.K_LEFT]:
+            strategy_player_pos[0] -= STRATEGY_SPEED
+        if keys[pygame.K_RIGHT]:
+            strategy_player_pos[0] += STRATEGY_SPEED
+        strategy_player_pos[0] = max(0, min(SCREEN_WIDTH, strategy_player_pos[0]))
+        strategy_player_pos[1] = max(0, min(SCREEN_HEIGHT, strategy_player_pos[1]))
+        if keys[pygame.K_SPACE]:
+            for system in systems:
+                if system["enemy"]:
+                    dx = strategy_player_pos[0] - system["x"]
+                    dy = strategy_player_pos[1] - system["y"]
+                    if math.hypot(dx, dy) < SYSTEM_RADIUS:
+                        system["enemy"] = False
+                        start_battle()
+                        break
+    elif game_state == GAME_BATTLE:
         keys = pygame.key.get_pressed()
         if keys[pygame.K_UP]:
             player.accelerate(0.2)
@@ -263,14 +300,14 @@ while running:
         computer_bullets.update()
 
         # Computer AI
-        computer_ai(computer, player, player_bullets)  
+        computer_ai(computer, player, player_bullets)
 
         # --- Collision Detection ---
 
         # Player bullets hitting computer
-        hits = pygame.sprite.groupcollide(computer_group, player_bullets, False, True)  # False: computer does not get killed
-        for computer_ship, bullets_hit in hits.items():  # Loop through hits if any exist
-            for bullet in bullets_hit:  # Loop through each bullet hit, to apply damage from all the bullets
+        hits = pygame.sprite.groupcollide(computer_group, player_bullets, False, True)
+        for computer_ship, bullets_hit in hits.items():
+            for bullet in bullets_hit:
                 computer_ship.take_damage(bullet.damage)
 
         # Computer bullets hitting player
@@ -280,9 +317,7 @@ while running:
                 player_ship.take_damage(bullet.damage)
 
         # Check for game over (ship destroyed)
-        if player.shields <= 0:
-            game_state = GAME_OVER
-        if computer.shields <= 0:
+        if player.shields <= 0 or computer.shields <= 0:
             game_state = GAME_OVER
 
     # --- Drawing ---
@@ -292,30 +327,33 @@ while running:
     for x, y in stars:
         pygame.draw.circle(screen, STAR_COLOR, (x, y), STAR_SIZE)
 
-    # Draw ships and bullets
-    player_group.draw(screen)
-    computer_group.draw(screen)
-    player_bullets.draw(screen)
-    computer_bullets.draw(screen)
+    if game_state == GAME_STRATEGY:
+        for system in systems:
+            color = RED if system["enemy"] else WHITE
+            pygame.draw.circle(screen, color, (system["x"], system["y"]), SYSTEM_RADIUS)
+        pygame.draw.circle(screen, GREEN, (int(strategy_player_pos[0]), int(strategy_player_pos[1])), SYSTEM_RADIUS // 2)
+    else:
+        player_group.draw(screen)
+        computer_group.draw(screen)
+        player_bullets.draw(screen)
+        computer_bullets.draw(screen)
 
-    # Draw shields
-    font = pygame.font.Font(None, 24)
-    player_shields_text = font.render(f"Player Shields: {player.shields}", True, GREEN)
-    computer_shields_text = font.render(f"Computer Shields: {computer.shields}", True, RED)
-    screen.blit(player_shields_text, (10, 10))
-    screen.blit(computer_shields_text, (SCREEN_WIDTH - 200, 10))
+        font = pygame.font.Font(None, 24)
+        player_shields_text = font.render(f"Player Shields: {player.shields}", True, GREEN)
+        computer_shields_text = font.render(f"Computer Shields: {computer.shields}", True, RED)
+        screen.blit(player_shields_text, (10, 10))
+        screen.blit(computer_shields_text, (SCREEN_WIDTH - 200, 10))
 
-    # Game Over Screen
-    if game_state == GAME_OVER:
-        font = pygame.font.Font(None, 48)
-        if player.shields <= 0:
-            text = font.render("Computer Wins!", True, RED)
-        else:
-            text = font.render("Player Wins!", True, GREEN)
-        text_rect = text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
-        screen.blit(text, text_rect)
+        if game_state == GAME_OVER:
+            font = pygame.font.Font(None, 48)
+            if player.shields <= 0:
+                text = font.render("Computer Wins!", True, RED)
+            else:
+                text = font.render("Player Wins!", True, GREEN)
+            text_rect = text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
+            screen.blit(text, text_rect)
 
-    pygame.display.flip()  # Update the display
-    clock.tick(60)  # Limit frame rate to 60 FPS
+pygame.display.flip()  # Update the display
+clock.tick(60)  # Limit frame rate to 60 FPS
 
 pygame.quit()
