@@ -353,7 +353,7 @@ while running:
             text_rect = text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
             screen.blit(text, text_rect)
 
-pygame.display.flip()  # Update the display
-clock.tick(60)  # Limit frame rate to 60 FPS
+    pygame.display.flip()  # Update the display
+    clock.tick(60)  # Limit frame rate to 60 FPS
 
 pygame.quit()
